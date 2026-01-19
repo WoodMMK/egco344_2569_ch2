@@ -49,6 +49,8 @@
             background-color: #f4f4f4;
         }
     </style>
+    <!-- Add Chart.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <header>
@@ -67,6 +69,11 @@
         </div>
         <div class="card">
             <h3>Electricity Usage by Province</h3>
+            <!-- Bar graph canvas with limited height -->
+            <canvas id="usage-chart" style="height: 20vh; max-height: 300px;"></canvas>
+            <!-- Input to limit rows -->
+            <label for="row-limit">Rows to display:</label>
+            <input type="number" id="row-limit" value="10" min="1" style="margin-bottom: 1rem;" />
             <table>
                 <thead>
                     <tr>
@@ -100,10 +107,19 @@
             const totalUsers = userData.reduce((sum, record) => sum + record.residential_count, 0);
             document.getElementById('total-users').textContent = `${totalUsers.toLocaleString()} users`;
 
+            // Render bar graph
+            renderChart(usageData.Sheet1);
+
             // Populate usage table
+            const rowLimitInput = document.getElementById('row-limit');
+            rowLimitInput.addEventListener('input', () => populateTable(usageData.Sheet1, rowLimitInput.value));
+            populateTable(usageData.Sheet1, rowLimitInput.value);
+        }
+
+        function populateTable(data, rowLimit) {
             const usageTable = document.getElementById('usage-table');
             usageTable.innerHTML = '';
-            usageData.Sheet1.forEach(record => {
+            data.slice(0, rowLimit).forEach(record => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${record.province_name}</td>
@@ -113,6 +129,40 @@
                     <td>${record.large_business_kwh.toLocaleString()}</td>
                 `;
                 usageTable.appendChild(row);
+            });
+        }
+
+        function renderChart(data) {
+            // Sort data by residential_kwh in descending order and take the top 15
+            const top15Data = data
+                .sort((a, b) => b.residential_kwh - a.residential_kwh)
+                .slice(0, 15);
+
+            const ctx = document.getElementById('usage-chart').getContext('2d');
+            const labels = top15Data.map(record => record.province_name);
+            const residentialData = top15Data.map(record => record.residential_kwh);
+
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Residential Usage (kWh)',
+                        data: residentialData,
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false, // Allow custom height
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
             });
         }
 
