@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Electricity Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        header {
+            background-color: #4CAF50;
+            color: white;
+            padding: 1rem;
+            text-align: center;
+        }
+        .container {
+            padding: 1rem;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 1rem;
+            margin: 1rem 0;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        .card h3 {
+            margin: 0 0 1rem;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        table th, table td {
+            border: 1px solid #ddd;
+            padding: 0.5rem;
+            text-align: left;
+        }
+        table th {
+            background-color: #f4f4f4;
+        }
+    </style>
+    <!-- Add Chart.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Electricity Dashboard</h1>
+    </header>
+    <div class="container">
+        <div class="grid">
+            <div class="card">
+                <h3>Total Electricity Usage</h3>
+                <p id="total-usage">Loading...</p>
+            </div>
+            <div class="card">
+                <h3>Total Users</h3>
+                <p id="total-users">Loading...</p>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Electricity Usage by Province</h3>
+            <!-- Bar graph canvas with limited height -->
+            <canvas id="usage-chart" style="height: 20vh; max-height: 300px;"></canvas>
+            <!-- Input to limit rows -->
+            <label for="row-limit">Rows to display:</label>
+            <input type="number" id="row-limit" value="10" min="1" style="margin-bottom: 1rem;" />
+            <table>
+                <thead>
+                    <tr>
+                        <th onclick="sortTable(0)">Province</th>
+                        <th onclick="sortTable(1)">Residential (kWh)</th>
+                        <th onclick="sortTable(2)">Small Business (kWh)</th>
+                        <th onclick="sortTable(3)">Medium Business (kWh)</th>
+                        <th onclick="sortTable(4)">Large Business (kWh)</th>
+                    </tr>
+                </thead>
+                <tbody id="usage-table">
+                    <tr>
+                        <td colspan="5">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <script>
+        async function fetchData() {
+            const usageResponse = await fetch('./electricity_usages_en.json');
+            const userResponse = await fetch('./electricity_users_en.json');
+            const usageData = await usageResponse.json();
+            const userData = await userResponse.json();
+
+            // Calculate total electricity usage
+            const totalUsage = usageData.Sheet1.reduce((sum, record) => sum + record.residential_kwh, 0);
+            document.getElementById('total-usage').textContent = `${totalUsage.toLocaleString()} kWh`;
+
+            // Calculate total users
+            const totalUsers = userData.reduce((sum, record) => sum + record.residential_count, 0);
+            document.getElementById('total-users').textContent = `${totalUsers.toLocaleString()} users`;
+
+            // Render bar graph
+            renderChart(usageData.Sheet1);
+
+            // Populate usage table
+            const rowLimitInput = document.getElementById('row-limit');
+            rowLimitInput.addEventListener('input', () => populateTable(usageData.Sheet1, rowLimitInput.value));
+            populateTable(usageData.Sheet1, rowLimitInput.value);
+        }
+
+        function populateTable(data, rowLimit) {
+            const usageTable = document.getElementById('usage-table');
+            usageTable.innerHTML = '';
+            data.slice(0, rowLimit).forEach(record => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${record.province_name}</td>
+                    <td>${record.residential_kwh.toLocaleString()}</td>
+                    <td>${record.small_business_kwh.toLocaleString()}</td>
+                    <td>${record.medium_business_kwh.toLocaleString()}</td>
+                    <td>${record.large_business_kwh.toLocaleString()}</td>
+                `;
+                usageTable.appendChild(row);
+            });
+        }
+
+        function renderChart(data) {
+            // Sort data by residential_kwh in descending order and take the top 15
+            const top15Data = data
+                .sort((a, b) => b.residential_kwh - a.residential_kwh)
+                .slice(0, 15);
+
+            const ctx = document.getElementById('usage-chart').getContext('2d');
+            const labels = top15Data.map(record => record.province_name);
+            const residentialData = top15Data.map(record => record.residential_kwh);
+
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Residential Usage (kWh)',
+                        data: residentialData,
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false, // Allow custom height
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        fetchData();
+
+        function sortTable(columnIndex) {
+            const tbody = document.getElementById("usage-table");
+            const rows = Array.from(tbody.rows);
+            const isAscending = tbody.getAttribute("data-sort-order") !== "asc";
+
+            rows.sort((a, b) => {
+                const aText = a.cells[columnIndex].textContent.replace(/,/g, '');
+                const bText = b.cells[columnIndex].textContent.replace(/,/g, '');
+
+                const aValue = isNaN(aText) ? aText : parseFloat(aText);
+                const bValue = isNaN(bText) ? bText : parseFloat(bText);
+
+                if (aValue < bValue) return isAscending ? -1 : 1;
+                if (aValue > bValue) return isAscending ? 1 : -1;
+                return 0;
+            });
+
+            tbody.innerHTML = '';
+            rows.forEach(row => tbody.appendChild(row));
+            tbody.setAttribute("data-sort-order", isAscending ? "asc" : "desc");
+        }
+    </script>
+</body>
+</html>
